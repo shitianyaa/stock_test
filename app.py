@@ -88,21 +88,71 @@ def main():
             
             status.update(label="✅ 数据就绪", state="complete")
         
-        # 数据展示
-        c1, c2, c3 = st.columns(3)
+        # 1. 使用 Expander 查看原始数据 (调试用)
+        with st.expander("📊 点击查看所有详细数据 JSON"):
+            st.json({
+                "技术面": daily_data,
+                "基本面": fund_data,
+                "市场面": mkt_data
+            })
+
+        # 2. 核心指标面板 (全量展示)
+        st.subheader("📊 详细数据面板")
+        
+        # 第一行：价格与成交
+        c1, c2, c3, c4 = st.columns(4)
         with c1:
             st.metric("收盘价", daily_data.get('收盘价'), daily_data.get('涨跌幅'))
-            st.write(f"MACD: {daily_data.get('MACD')}")
         with c2:
-            st.metric("PE(TTM)", fund_data.get('PE(TTM)'))
-            st.write(f"RSI: {daily_data.get('RSI')}")
+            st.metric("成交量", daily_data.get('成交量'))
+            # 兼容港股可能没有换手率
+            turnover = daily_data.get('换手率', 'N/A')
+            st.caption(f"换手率: {turnover}")
         with c3:
-            st.metric("市场情绪", mkt_data.get('市场情绪'))
-            st.write(f"指数涨跌: {mkt_data.get('市场指数涨跌幅')}")
+            st.metric("波动率", daily_data.get('波动率'))
+        with c4:
+            st.metric("PE(TTM)", fund_data.get('PE(TTM)'))
+            st.caption(f"PB: {fund_data.get('PB')}")
+
+        st.divider()
+
+        # 第二行：技术指标
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("#### 📈 趋势均线")
+            st.write(f"**MA5**: {daily_data.get('5日均线')}")
+            st.write(f"**MA10**: {daily_data.get('10日均线')}")
+            st.write(f"**MA20**: {daily_data.get('20日均线')}")
+            
+        with c2:
+            st.markdown("#### 📊 震荡指标")
+            st.write(f"**MACD**: {daily_data.get('MACD')}")
+            st.write(f"**RSI (14)**: {daily_data.get('RSI')}")
+            
+        with c3:
+            st.markdown("#### 🛡️ 布林带通道")
+            st.write(f"**上轨**: {daily_data.get('布林上轨')}")
+            st.write(f"**中轨**: {daily_data.get('布林中轨')}")
+            st.write(f"**下轨**: {daily_data.get('布林下轨')}")
+
+        st.divider()
+
+        # 第三行：基本面与环境
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("#### 🏢 公司基本面")
+            st.write(f"**所属行业**: {fund_data.get('所属行业')}")
+            st.write(f"**总市值**: {fund_data.get('总市值')}")
+            st.write(f"**上市地**: {'港股' if '.HK' in stock_code else 'A股'}")
+        
+        with c2:
+            st.markdown("#### 🌍 市场环境")
+            st.write(f"**参考指数涨跌**: {mkt_data.get('市场指数涨跌幅')}")
+            st.write(f"**市场情绪**: {mkt_data.get('市场情绪')}")
 
         # AI 分析
         st.subheader("🤖 DeepSeek 分析")
-        with st.spinner("AI 思考中..."):
+        with st.spinner("AI 正在思考策略..."):
             prompt = generate_analysis_prompt(stock_code, stock_name, predict_cycle, daily_data, fund_data, mkt_data)
             res = call_deepseek_api(prompt)
         
