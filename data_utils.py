@@ -23,38 +23,38 @@ def get_tushare_pro():
         return None
 
 def get_enhanced_technical_indicators(df):
-    """计算技术指标"""
+    """计算全套技术指标"""
     try:
         # Tushare 返回按日期降序，计算指标须按升序
         df = df.sort_values('trade_date').reset_index(drop=True)
         close = df['close']
         
-        # 基础均线
+        # 1. 均线系统
         df['ma5'] = close.rolling(window=5).mean()
         df['ma10'] = close.rolling(window=10).mean()
         df['ma20'] = close.rolling(window=20).mean()
         
-        # MACD (12, 26, 9)
+        # 2. MACD (12, 26, 9)
         exp1 = close.ewm(span=12, adjust=False).mean()
         exp2 = close.ewm(span=26, adjust=False).mean()
         df['dif'] = exp1 - exp2
         df['dea'] = df['dif'].ewm(span=9, adjust=False).mean()
         df['macd'] = (df['dif'] - df['dea']) * 2
         
-        # RSI (14)
+        # 3. RSI (14)
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         df['rsi'] = 100 - (100 / (1 + rs))
         
-        # 布林带 (20, 2)
+        # 4. 布林带 (20, 2)
         df['bb_middle'] = close.rolling(window=20).mean()
         bb_std = close.rolling(window=20).std()
         df['bb_upper'] = df['bb_middle'] + 2 * bb_std
         df['bb_lower'] = df['bb_middle'] - 2 * bb_std
         
-        # 波动率
+        # 5. 波动率 (20日)
         df['volatility'] = df['pct_chg'].rolling(window=20).std()
         
         return df
@@ -135,7 +135,7 @@ def get_clean_market_data(ts_code, days=90):
         
         df = pd.DataFrame()
         
-        # === 核心修改：区分市场接口 ===
+        # === 区分市场接口 ===
         if ts_code.endswith('.HK'):
             try:
                 # 港股接口 (需2000积分)
@@ -149,7 +149,7 @@ def get_clean_market_data(ts_code, days=90):
         if df.empty:
             return {"错误": "未获取到历史数据 (可能停牌或权限不足)"}
         
-        # 计算指标
+        # 计算所有技术指标
         df = get_enhanced_technical_indicators(df)
         latest = df.iloc[-1]
         
@@ -159,6 +159,7 @@ def get_clean_market_data(ts_code, days=90):
             "成交量": f"{latest['vol']/10000:.2f}万手",
             "换手率": f"{latest.get('turnover_rate', 'N/A')}",
             "5日均线": f"{latest['ma5']:.2f}" if pd.notna(latest['ma5']) else "N/A",
+            "10日均线": f"{latest['ma10']:.2f}" if pd.notna(latest['ma10']) else "N/A",
             "20日均线": f"{latest['ma20']:.2f}" if pd.notna(latest['ma20']) else "N/A",
             "MACD": f"{latest['macd']:.4f}" if pd.notna(latest['macd']) else "N/A",
             "RSI": f"{latest['rsi']:.2f}" if pd.notna(latest['rsi']) else "N/A",
@@ -182,7 +183,7 @@ def get_clean_fundamental_data(ts_code, daily_data=None):
         mv = "N/A"
         industry = "未知"
         
-        # === 核心修改：区分市场 ===
+        # === 区分市场 ===
         if ts_code.endswith('.HK'):
             # 港股基本面
             try:
@@ -190,8 +191,7 @@ def get_clean_fundamental_data(ts_code, daily_data=None):
                 if not basic.empty:
                     info = basic.iloc[0]
                     industry = info.get('industry', '未知')
-                    # 港股 PE/PB 很多时候不在 basic 里，简单处理
-                    pe = info.get('pe', 'N/A') 
+                    pe = info.get('pe', 'N/A') # 港股基础表里有时有静态PE
             except:
                 industry = "港股(需权限)"
         else:
@@ -203,7 +203,7 @@ def get_clean_fundamental_data(ts_code, daily_data=None):
             # 每日指标
             try:
                 db = pro.daily_basic(ts_code=ts_code, trade_date=datetime.now().strftime('%Y%m%d'))
-                if db.empty: # 尝试前一天
+                if db.empty: 
                     db = pro.daily_basic(ts_code=ts_code, trade_date=(datetime.now() - timedelta(days=1)).strftime('%Y%m%d'))
                 
                 if not db.empty:
@@ -234,7 +234,7 @@ def get_market_environment_data(ts_code):
         index_code = '399300.SZ' 
         # 如果是港股，取恒生指数
         if ts_code.endswith('.HK'):
-            index_code = 'HSI' # Tushare 恒指代码可能不同，常用 HSI
+            index_code = 'HSI' 
         
         end = datetime.now().strftime('%Y%m%d')
         start = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
@@ -243,10 +243,10 @@ def get_market_environment_data(ts_code):
         try:
             df = pro.index_daily(ts_code=index_code, start_date=start, end_date=end)
             if df.empty:
-                # 如果恒指拿不到，退回沪深300作为参考
+                # 备用：沪深300
                 df = pro.index_daily(ts_code='399300.SZ', start_date=start, end_date=end)
             
-            latest = df.iloc[0] # 倒序
+            latest = df.iloc[0] 
             change = latest['pct_chg']
             
             sentiment = "中性"
