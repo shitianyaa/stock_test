@@ -62,7 +62,7 @@ def run_app():
     if 'target_code' not in st.session_state: st.session_state.target_code = ""
     if 'stock_name' not in st.session_state: st.session_state.stock_name = ""
 
-    # === CSS 深度美化 (包含主页样式) ===
+    # === CSS 深度美化 ===
     st.markdown("""
     <style>
         /* 全局字体优化 */
@@ -242,7 +242,7 @@ def run_app():
         """, unsafe_allow_html=True)
 
     def show_landing_page():
-        """显示高级感首页 (已恢复)"""
+        """显示高级感首页"""
         st.markdown("""
         <div class="landing-header">
             <h1>DeepSeek 智能投研系统</h1>
@@ -259,7 +259,6 @@ def run_app():
             </div>
             """, unsafe_allow_html=True)
 
-        # 恢复功能特性区
         f1, f2, f3, f4 = st.columns(4, gap="medium")
         with f1: st.markdown("""<div class="feature-card"><div class="feature-icon">📡</div><div class="feature-title">实时行情接入</div><div class="feature-desc">直连交易所数据源，毫秒级获取最新价格、成交量与盘口动态。</div></div>""", unsafe_allow_html=True)
         with f2: st.markdown("""<div class="feature-card"><div class="feature-icon">🧠</div><div class="feature-title">AI 深度推理</div><div class="feature-desc">基于 DeepSeek V3 大模型，模拟资深分析师逻辑进行多维度拆解。</div></div>""", unsafe_allow_html=True)
@@ -326,11 +325,9 @@ def run_app():
 
     # --- 主视图 ---
     if not analyze_btn or not stock_code:
-        # 如果没有历史记录，显示欢迎页；如果有，就保留在当前页（或者你可以选择始终显示历史记录在下方）
         if not st.session_state.history_data:
             show_landing_page()
         else:
-            # 有历史记录时，也显示Landing Page作为头部，下面跟历史记录
             show_landing_page()
     else:
         # 1. 顶部 Header
@@ -359,30 +356,87 @@ def run_app():
             status.update(label="✅ 数据获取完成", state="complete")
             time.sleep(0.5)
 
-        # 保存历史记录
+        # 4. AI 报告生成
+        icon_map = {"稳健理智": "🧐", "短线博弈": "⚡", "激进犀利": "🔥"}
+        current_icon = icon_map.get(analysis_style, "🤖")
+        analysis_res = ""
+
+        st.markdown(f"""
+        <div class="ai-box">
+            <div style="display:flex; align-items:center; gap:15px; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid #eee;">
+                <span style="font-size: 2.2rem;">{current_icon}</span>
+                <div>
+                    <h3 style="margin:0; color:#1e3c72;">DeepSeek 深度研报</h3>
+                    <span style="font-size:0.9rem; color:#888;">AI 扮演角色：{analysis_style}分析师</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        with st.spinner("🧠 DeepSeek 正在思考策略..."):
+            prompt = generate_analysis_prompt(
+                stock_code, stock_name, predict_cycle, 
+                daily_data, fund_data, mkt_data, 
+                style=analysis_style
+            )
+            analysis_res = call_deepseek_api(prompt)
+        
+        if analysis_res.startswith("❌"):
+            st.error(analysis_res)
+        else:
+            st.markdown(analysis_res)
+            st.markdown(f"""
+            <div style="text-align:right; margin-top:30px; padding-top:20px; border-top:1px dashed #eee; color:#ccc; font-size:0.8rem;">
+                生成 ID: {datetime.now().strftime('%Y%m%d%H%M%S')} | 数据来源: Tushare Pro | 模型: DeepSeek-V3
+            </div>
+            """, unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+        # === 核心逻辑：保存全量历史记录 ===
         new_record = {
-            "时间": datetime.now().strftime('%m-%d %H:%M'),
-            "代码": stock_code, "名称": stock_name,
-            "最新价": daily_data.get('收盘价'), "涨跌幅": daily_data.get('涨跌幅'),
-            "PE(TTM)": fund_data.get('PE(TTM)'), "风格": analysis_style
+            "分析时间": datetime.now().strftime('%Y-%m-%d %H:%M'),
+            "代码": stock_code,
+            "名称": stock_name,
+            "风格": analysis_style,
+            "周期": predict_cycle,
+            # --- 核心行情 ---
+            "最新价": daily_data.get('收盘价'),
+            "涨跌幅": daily_data.get('涨跌幅'),
+            "成交量": daily_data.get('成交量'),
+            "换手率": daily_data.get('换手率'),
+            "波动率": daily_data.get('波动率'),
+            # --- 基本面 ---
+            "PE(TTM)": fund_data.get('PE(TTM)'),
+            "PB": fund_data.get('PB'),
+            "总市值": fund_data.get('总市值'),
+            "行业": fund_data.get('所属行业'),
+            # --- 技术指标 ---
+            "MA5": daily_data.get('5日均线'),
+            "MA10": daily_data.get('10日均线'),
+            "MA20": daily_data.get('20日均线'),
+            "MACD": daily_data.get('MACD'),
+            "RSI": daily_data.get('RSI'),
+            "布林上轨": daily_data.get('布林上轨'),
+            "布林中轨": daily_data.get('布林中轨'),
+            "布林下轨": daily_data.get('布林下轨'),
+            # --- 市场环境 ---
+            "市场情绪": mkt_data.get('市场情绪'),
+            "指数涨跌": mkt_data.get('市场指数涨跌幅'),
+            # --- AI 报告全文 ---
+            "AI分析报告": analysis_res
         }
-           # 判断标准：只有当 [代码] 和 [风格] 和 [周期] 完全一致，且时间极近(防止误触)时，才视为重复
+        
+        # 记录去重逻辑
         should_save = True
         if st.session_state.history_data:
-            last_record = st.session_state.history_data[0]
-            # 如果 代码、风格、周期 都一样，就不保存了（防止刷新页面重复添加）
-            if (last_record["代码"] == stock_code and 
-                last_record["风格"] == analysis_style and
-                last_record.get("AI预测周期") == predict_cycle):
+            last = st.session_state.history_data[0]
+            if (last["代码"] == stock_code and last["风格"] == analysis_style and last["周期"] == predict_cycle):
                 should_save = False
         
         if should_save:
             st.session_state.history_data.insert(0, new_record)
-            # 保持最新的 50 条记录，防止无限增长
-            if len(st.session_state.history_data) > 50:
-                st.session_state.history_data.pop()
+            if len(st.session_state.history_data) > 50: st.session_state.history_data.pop()
 
-        # 2. 核心指标区
+        # 2. 核心指标区 (UI显示)
         st.markdown("### 📈 核心概览")
         c1, c2, c3, c4 = st.columns(4, gap="large")
         
@@ -392,13 +446,13 @@ def run_app():
         elif pchg != '0.00%': trend = "up"
 
         with c1: render_data_card("Close", "最新收盘", daily_data.get('收盘价'), pchg, trend)
-        with c2: render_data_card("Volume", "成交量", daily_data.get('成交量'), f"换手率: {daily_data.get('换手率')}")
-        with c3: render_data_card("PE (TTM)", "滚动市盈率", fund_data.get('PE(TTM)'), f"PB (市净率): {fund_data.get('PB')}")
+        with c2: render_data_card("Volume", "成交量", daily_data.get('成交量'), f"换手: {daily_data.get('换手率')}")
+        with c3: render_data_card("PE (TTM)", "滚动市盈率", fund_data.get('PE(TTM)'), f"PB: {fund_data.get('PB')}")
         with c4: render_data_card("Volatility", "年化波动率", daily_data.get('波动率'), "20日标准差")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 3. 详细指标面板
+        # 3. 详细指标面板 (UI显示)
         col_tech, col_market = st.columns([2, 1], gap="large")
         
         with col_tech:
@@ -467,67 +521,42 @@ def run_app():
             </div>
             """, unsafe_allow_html=True)
 
-        # 4. AI 报告
-        icon_map = {"稳健理智": "🧐", "短线博弈": "⚡", "激进犀利": "🔥"}
-        current_icon = icon_map.get(analysis_style, "🤖")
-        
-        st.markdown(f"""
-        <div class="ai-box">
-            <div style="display:flex; align-items:center; gap:15px; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid #eee;">
-                <span style="font-size: 2.2rem;">{current_icon}</span>
-                <div>
-                    <h3 style="margin:0; color:#1e3c72;">DeepSeek 深度研报</h3>
-                    <span style="font-size:0.9rem; color:#888;">AI 扮演角色：{analysis_style}分析师</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        with st.spinner("🧠 DeepSeek 正在思考策略..."):
-            prompt = generate_analysis_prompt(
-                stock_code, stock_name, predict_cycle, 
-                daily_data, fund_data, mkt_data, 
-                style=analysis_style
-            )
-            res = call_deepseek_api(prompt)
-        
-        if res.startswith("❌"):
-            st.error(res)
-        else:
-            st.markdown(res)
-            st.markdown(f"""
-            <div style="text-align:right; margin-top:30px; padding-top:20px; border-top:1px dashed #eee; color:#ccc; font-size:0.8rem;">
-                生成 ID: {datetime.now().strftime('%Y%m%d%H%M%S')} | 数据来源: Tushare Pro | 模型: DeepSeek-V3
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
     # ===================== 5. 历史记录 (底部常驻) =====================
     if st.session_state.history_data:
-        st.markdown("<br><br><br>", unsafe_allow_html=True)
-        st.markdown("### 📜 历史分析记录")
+        st.markdown("<br><hr><br>", unsafe_allow_html=True)
+        st.markdown("### 📜 历史分析记录与对比")
         
-        with st.expander("点击展开/折叠历史记录", expanded=True):
+        with st.expander("点击查看历史记录 (含下载)", expanded=True):
+            # UI上只显示摘要，防止表格太宽
             df_hist = pd.DataFrame(st.session_state.history_data)
+            
+            # 显示的列 (UI)
+            display_cols = ["分析时间", "代码", "名称", "最新价", "涨跌幅", "PE(TTM)", "市场情绪", "风格"]
             st.dataframe(
-                df_hist, 
+                df_hist[display_cols], # 只显示摘要列
                 use_container_width=True, 
                 hide_index=True,
                 column_config={
                     "涨跌幅": st.column_config.TextColumn("涨跌幅", help="当日涨跌幅"),
-                    "风格": st.column_config.TextColumn("AI风格"),
                 }
             )
             
             c_d1, c_d2 = st.columns([1, 5])
             with c_d1:
+                # 下载的是全量数据 (包含 AI 报告全文)
                 csv = df_hist.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📥 下载数据 (CSV)", csv, f"deepseek_history_{datetime.now().date()}.csv", "text/csv")
+                st.download_button(
+                    label="📥 下载完整数据 (CSV)", 
+                    data=csv, 
+                    file_name=f"deepseek_analysis_{datetime.now().strftime('%Y%m%d_%H%M')}.csv", 
+                    mime="text/csv"
+                )
             with c_d2:
                 if st.button("🗑️ 清空记录"):
                     st.session_state.history_data = []
                     st.rerun()
 
-# ===================== 程序入口 =====================
+# ===================== 4. 程序入口 =====================
 if __name__ == "__main__":
     if check_password():
         run_app()
