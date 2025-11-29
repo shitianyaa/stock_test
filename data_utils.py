@@ -62,63 +62,48 @@ def search_stocks(keyword):
         return res[:10]
     except: return []
 
-# ===================== 核心：疯狗模式获取换手率 =====================
+# ===================== 核心指标获取 (仅A股) =====================
 
-def get_real_turnover_rate(pro, ts_code):
+def get_latest_metrics(pro, ts_code):
     """
-    不惜一切代价获取换手率
-    1. A股: daily -> daily_basic -> 每日指标
-    2. 港股: hk_indicator (最近30天找非空)
+    统一获取基本面指标
+    注意：Tushare 目前仅支持 A股 的 daily_basic
     """
+    metrics = {
+        "turnover_rate": "N/A",
+        "pe_ttm": "N/A", 
+        "pb": "N/A", 
+        "total_mv": "N/A"
+    }
+    
+    # 港股：目前Tushare API不支持每日估值指标，直接返回 N/A
+    if ts_code.endswith('.HK'):
+        metrics["turnover_rate"] = "N/A (Tushare源缺)"
+        metrics["pe_ttm"] = "N/A (Tushare源缺)"
+        metrics["pb"] = "N/A (Tushare源缺)"
+        metrics["total_mv"] = "N/A (Tushare源缺)"
+        return metrics
+
+    # A股：正常获取
     try:
-        # === 港股逻辑 ===
-        if ts_code.endswith('.HK'):
-            # 策略：查最近30天，倒序，找到第一个非空的 turnover_rate
-            end = datetime.now().strftime('%Y%m%d')
-            start = (datetime.now() - timedelta(days=30)).strftime('%Y%m%d')
-            
-            try:
-                df = pro.hk_indicator(ts_code=ts_code, start_date=start, end_date=end, fields='trade_date,turnover_rate')
-                if not df.empty:
-                    # 过滤掉 None/NaN
-                    df = df[df['turnover_rate'].notna()]
-                    if not df.empty:
-                        val = df.sort_values('trade_date', ascending=False).iloc[0]['turnover_rate']
-                        return f"{float(val):.2f}%"
-            except: pass
-            return "N/A (无权限或数据)"
-
-        # === A股逻辑 ===
-        else:
-            today = datetime.now().strftime('%Y%m%d')
-            start_week = (datetime.now() - timedelta(days=7)).strftime('%Y%m%d')
-            
-            # 尝试 1: daily 接口 (通常有)
-            try:
-                df = pro.daily(ts_code=ts_code, start_date=start_week, end_date=today)
-                if not df.empty:
-                    latest = df.sort_values('trade_date', ascending=False).iloc[0]
-                    if pd.notna(latest.get('turnover_rate')):
-                        return f"{latest['turnover_rate']:.2f}%"
-            except: pass
-            
-            # 尝试 2: daily_basic (如果 daily 没有，这里肯定有)
-            try:
-                df = pro.daily_basic(ts_code=ts_code, start_date=start_week, end_date=today, fields='trade_date,turnover_rate,turnover_rate_f')
-                if not df.empty:
-                    latest = df.sort_values('trade_date', ascending=False).iloc[0]
-                    # 优先用 turnover_rate，没有则用 turnover_rate_f (自由流通换手)
-                    if pd.notna(latest.get('turnover_rate')):
-                        return f"{latest['turnover_rate']:.2f}%"
-                    if pd.notna(latest.get('turnover_rate_f')):
-                        return f"{latest['turnover_rate_f']:.2f}% (自由)"
-            except: pass
-            
-            return "N/A"
+        end = datetime.now().strftime('%Y%m%d')
+        start = (datetime.now() - timedelta(days=20)).strftime('%Y%m%d')
+        
+        fields = 'trade_date,turnover_rate,pe_ttm,pb,total_mv'
+        df = pro.daily_basic(ts_code=ts_code, start_date=start, end_date=end, fields=fields)
+        
+        if not df.empty:
+            r = df.sort_values('trade_date', ascending=False).iloc[0]
+            if pd.notna(r.get('turnover_rate')): metrics['turnover_rate'] = f"{r['turnover_rate']:.2f}%"
+            if pd.notna(r.get('pe_ttm')): metrics['pe_ttm'] = f"{r['pe_ttm']:.2f}"
+            if pd.notna(r.get('pb')): metrics['pb'] = f"{r['pb']:.2f}"
+            if pd.notna(r.get('total_mv')): metrics['total_mv'] = f"{r['total_mv']/10000:.2f}亿"
             
     except Exception as e:
-        print(f"换手率获取出错: {e}")
-        return "N/A"
+        print(f"Metrics Error: {e}")
+        pass
+        
+    return metrics
 
 # ===================== 技术指标计算 =====================
 
@@ -155,30 +140,29 @@ def get_enhanced_technical_indicators(df):
 
 # ===================== 数据获取主入口 =====================
 
+@st.cache_data(ttl=600) 
 def get_clean_market_data(ts_code, days=90):
     pro = get_tushare_pro()
     if not pro: return {"错误": "Token无效"}
     
     try:
+        # 1. 获取基本面指标 (A股有，港股无)
+        metrics = get_latest_metrics(pro, ts_code)
+        
+        # 2. 获取K线行情 (A股/港股都有)
         end = datetime.now().strftime('%Y%m%d')
         start = (datetime.now() - timedelta(days=days)).strftime('%Y%m%d')
         
         df = pd.DataFrame()
-        
-        # 1. 单独优先获取换手率 (防止被后续逻辑干扰)
-        turnover_str = get_real_turnover_rate(pro, ts_code)
-        
-        # 2. 获取K线行情
         if ts_code.endswith('.HK'):
-            try:
-                df = pro.hk_daily(ts_code=ts_code, start_date=start, end_date=end)
+            try: df = pro.hk_daily(ts_code=ts_code, start_date=start, end_date=end)
             except Exception as e: return {"错误": f"港股接口错: {e}"}
         else:
             df = pro.daily(ts_code=ts_code, start_date=start, end_date=end)
         
         if df.empty: return {"错误": "暂无行情数据"}
         
-        # 3. 计算指标
+        # 3. 计算技术指标
         df = get_enhanced_technical_indicators(df)
         latest = df.iloc[-1]
 
@@ -186,7 +170,7 @@ def get_clean_market_data(ts_code, days=90):
             "收盘价": f"{latest['close']}",
             "涨跌幅": f"{latest['pct_chg']:.2f}%",
             "成交量": f"{latest['vol']/10000:.2f}万手",
-            "换手率": turnover_str, # 使用单独获取的值
+            "换手率": metrics['turnover_rate'], 
             "5日均线": f"{latest['ma5']:.2f}" if pd.notna(latest['ma5']) else "-",
             "10日均线": f"{latest['ma10']:.2f}" if pd.notna(latest['ma10']) else "-",
             "20日均线": f"{latest['ma20']:.2f}" if pd.notna(latest['ma20']) else "-",
@@ -196,45 +180,40 @@ def get_clean_market_data(ts_code, days=90):
             "布林中轨": f"{latest['bb_mid']:.2f}" if pd.notna(latest['bb_mid']) else "-",
             "布林下轨": f"{latest['bb_low']:.2f}" if pd.notna(latest['bb_low']) else "-",
             "波动率": f"{latest['volatility']:.4f}" if pd.notna(latest['volatility']) else "-",
+            "_metrics_cache": metrics 
         }
     except Exception as e: return {"错误": str(e)}
 
 def get_clean_fundamental_data(ts_code, daily_data=None):
     pro = get_tushare_pro()
-    pe, pb, mv, industry = "-", "-", "-", "未知"
+    
+    industry = "未知"
+    
+    # 复用缓存
+    metrics = None
+    if daily_data and '_metrics_cache' in daily_data:
+        metrics = daily_data['_metrics_cache']
+    if not metrics:
+        metrics = get_latest_metrics(pro, ts_code)
+
     try:
+        # 获取行业
         if ts_code.endswith('.HK'):
-            # 港股
             try:
                 b = pro.hk_basic(ts_code=ts_code)
                 if not b.empty: industry = b.iloc[0].get('industry', '港股')
-                
-                # 估值 (查60天)
-                s_date = (datetime.now() - timedelta(days=60)).strftime('%Y%m%d')
-                df_i = pro.hk_indicator(ts_code=ts_code, start_date=s_date)
-                if not df_i.empty:
-                    df_i = df_i.sort_values('trade_date', ascending=False)
-                    for _, r in df_i.iterrows():
-                        if pd.notna(r.get('pe_ttm')) or pd.notna(r.get('mkt_cap')):
-                            if pd.notna(r.get('pe_ttm')): pe = f"{r['pe_ttm']:.2f}"
-                            if pd.notna(r.get('pb')): pb = f"{r['pb']:.2f}"
-                            if pd.notna(r.get('mkt_cap')): mv = f"{r['mkt_cap']/100000000:.2f}亿"
-                            break
             except: pass
         else:
-            # A股
             b = pro.stock_basic(ts_code=ts_code, fields='industry')
             if not b.empty: industry = b.iloc[0]['industry']
-            try:
-                db = pro.daily_basic(ts_code=ts_code, start_date=(datetime.now()-timedelta(days=5)).strftime('%Y%m%d'))
-                if not db.empty:
-                    r = db.sort_values('trade_date', ascending=False).iloc[0]
-                    pe = f"{r['pe_ttm']:.2f}"
-                    pb = f"{r['pb']:.2f}"
-                    mv = f"{r['total_mv']/10000:.2f}亿"
-            except: pass
     except: pass
-    return {"PE(TTM)":pe, "PB":pb, "总市值":mv, "所属行业":industry}
+
+    return {
+        "PE(TTM)": metrics['pe_ttm'],
+        "PB": metrics['pb'],
+        "总市值": metrics['total_mv'],
+        "所属行业": industry
+    }
 
 def get_market_environment_data(ts_code):
     pro = get_tushare_pro()
@@ -243,7 +222,7 @@ def get_market_environment_data(ts_code):
         end = datetime.now().strftime('%Y%m%d')
         start = (datetime.now() - timedelta(days=10)).strftime('%Y%m%d')
         
-        # 1. 优先拿沪深300
+        # 1. 沪深300兜底
         try:
             df = pro.index_daily(ts_code='399300.SZ', start_date=start, end_date=end)
             if not df.empty:
@@ -251,7 +230,7 @@ def get_market_environment_data(ts_code):
                 name = "沪深300"
         except: pass
 
-        # 2. 港股尝试拿恒指
+        # 2. 港股尝试恒指
         if ts_code.endswith('.HK'):
             try:
                 df = pro.index_daily(ts_code='HSI', start_date=start, end_date=end)
