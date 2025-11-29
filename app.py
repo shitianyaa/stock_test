@@ -57,7 +57,7 @@ def check_password():
 # ===================== 3. 主程序逻辑 =====================
 
 def run_app():
-    # === CSS 深度美化 (高端金融风) ===
+    # === CSS 深度美化 ===
     st.markdown("""
     <style>
         /* 全局字体优化 */
@@ -76,7 +76,6 @@ def run_app():
 
         /* --- 首页 (Landing Page) --- */
         .landing-header {
-            /* 核心修改：使用深邃的金融蓝渐变，替代之前的亮青色 */
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             padding: 4rem 2rem;
             border-radius: 20px;
@@ -168,20 +167,27 @@ def run_app():
         .up-text { color: #d93025; font-size: 0.9rem; font-weight: 500; }
         .down-text { color: #1e8e3e; font-size: 0.9rem; font-weight: 500; }
         
-        /* 按钮美化 */
+        /* === 按钮样式修复 (针对文字看不清问题) === */
         div.stButton > button {
-            background: #1e3c72; /* 深蓝纯色背景 */
-            color: white !important;
+            background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+            color: #ffffff !important; /* 强制白色文字 */
             border: none;
             padding: 0.6rem 1.2rem;
             border-radius: 8px;
             font-weight: 600;
             width: 100%;
             transition: all 0.3s;
+            box-shadow: 0 4px 6px rgba(30, 60, 114, 0.2);
+        }
+        /* 强制内部 p 标签文字也为白色 (Streamlit有时会嵌套p标签) */
+        div.stButton > button p {
+            color: #ffffff !important; 
         }
         div.stButton > button:hover {
-            background: #2a5298;
-            box-shadow: 0 4px 12px rgba(30, 60, 114, 0.3);
+            background: linear-gradient(90deg, #2a5298 0%, #1e3c72 100%);
+            box-shadow: 0 6px 12px rgba(30, 60, 114, 0.3);
+            transform: translateY(-1px);
+            color: #ffffff !important;
         }
         
         /* 技术指标行 */
