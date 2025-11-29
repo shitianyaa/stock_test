@@ -1,10 +1,10 @@
 # 📈 DeepSeek 智能投研系统 (AI Investment Research)
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
-![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
-![Tushare](https://img.shields.io/badge/Data-Tushare%20Pro-red)
-![DeepSeek](https://img.shields.io/badge/AI-DeepSeek%20V3-blueviolet)
-![License](https://img.shields.io/badge/License-MIT-green)
+[![Python](https://img.shields.io/badge/Python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![Tushare](https://img.shields.io/badge/Data-Tushare%20Pro-red)](https://tushare.pro/)
+[![DeepSeek](https://img.shields.io/badge/AI-DeepSeek%20V3-blueviolet)](https://www.deepseek.com/)
+
 
 **DeepSeek 智能投研系统** 是一款基于 **Streamlit** 开发的现代化金融分析工具。它深度整合了 **Tushare Pro** 的专业金融大数据与 **DeepSeek V3** 大语言模型的逻辑推理能力，为投资者提供“机构级”的实时个股分析报告。
 
