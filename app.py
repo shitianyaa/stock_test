@@ -62,7 +62,7 @@ def run_app():
     if 'target_code' not in st.session_state: st.session_state.target_code = ""
     if 'stock_name' not in st.session_state: st.session_state.stock_name = ""
 
-    # === CSS 深度美化 ===
+    # === CSS 深度美化 (含主页样式) ===
     st.markdown("""
     <style>
         /* 全局字体优化 */
@@ -81,6 +81,7 @@ def run_app():
 
         /* --- 首页 (Landing Page) --- */
         .landing-header {
+            /* 深海蓝渐变 - 高级感核心 */
             background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
             padding: 4rem 2rem;
             border-radius: 20px;
@@ -243,6 +244,7 @@ def run_app():
 
     def show_landing_page():
         """显示高级感首页"""
+        # 1. Hero Section
         st.markdown("""
         <div class="landing-header">
             <h1>DeepSeek 智能投研系统</h1>
@@ -250,6 +252,7 @@ def run_app():
         </div>
         """, unsafe_allow_html=True)
 
+        # 2. 引导操作区
         c1, c2, c3 = st.columns([1, 2, 1])
         with c2:
             st.markdown("""
@@ -259,6 +262,7 @@ def run_app():
             </div>
             """, unsafe_allow_html=True)
 
+        # 3. 特性展示区
         f1, f2, f3, f4 = st.columns(4, gap="medium")
         with f1: st.markdown("""<div class="feature-card"><div class="feature-icon">📡</div><div class="feature-title">实时行情接入</div><div class="feature-desc">直连交易所数据源，毫秒级获取最新价格、成交量与盘口动态。</div></div>""", unsafe_allow_html=True)
         with f2: st.markdown("""<div class="feature-card"><div class="feature-icon">🧠</div><div class="feature-title">AI 深度推理</div><div class="feature-desc">基于 DeepSeek V3 大模型，模拟资深分析师逻辑进行多维度拆解。</div></div>""", unsafe_allow_html=True)
@@ -289,6 +293,7 @@ def run_app():
                 if is_valid:
                     stock_code = result
                     st.session_state.target_code = code_input
+                    # 强制更新名称，防止缓存锁定
                     with st.spinner("验证中..."):
                         fetched_name = get_stock_name_by_code(stock_code)
                         st.session_state.stock_name = fetched_name
@@ -325,10 +330,8 @@ def run_app():
 
     # --- 主视图 ---
     if not analyze_btn or not stock_code:
-        if not st.session_state.history_data:
-            show_landing_page()
-        else:
-            show_landing_page()
+        # 如果没有触发分析，默认显示首页
+        show_landing_page()
     else:
         # 1. 顶部 Header
         st.markdown(f"""
@@ -344,7 +347,7 @@ def run_app():
         </div>
         """, unsafe_allow_html=True)
 
-        # 数据加载
+        # 2. 数据加载 & AI 调用 (先处理，后展示)
         with st.status("🔄 正在构建多因子分析模型...", expanded=True) as status:
             daily_data = get_clean_market_data(stock_code)
             if "错误" in daily_data:
@@ -353,79 +356,31 @@ def run_app():
                 return
             fund_data = get_clean_fundamental_data(stock_code, daily_data)
             mkt_data = get_market_environment_data(stock_code)
-            status.update(label="✅ 数据获取完成", state="complete")
-            time.sleep(0.5)
-
-        # 4. AI 报告生成
-        icon_map = {"稳健理智": "🧐", "短线博弈": "⚡", "激进犀利": "🔥"}
-        current_icon = icon_map.get(analysis_style, "🤖")
-        analysis_res = ""
-
-        st.markdown(f"""
-        <div class="ai-box">
-            <div style="display:flex; align-items:center; gap:15px; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid #eee;">
-                <span style="font-size: 2.2rem;">{current_icon}</span>
-                <div>
-                    <h3 style="margin:0; color:#1e3c72;">DeepSeek 深度研报</h3>
-                    <span style="font-size:0.9rem; color:#888;">AI 扮演角色：{analysis_style}分析师</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        with st.spinner("🧠 DeepSeek 正在思考策略..."):
+            
+            # 后台调用AI
             prompt = generate_analysis_prompt(
                 stock_code, stock_name, predict_cycle, 
                 daily_data, fund_data, mkt_data, 
                 style=analysis_style
             )
             analysis_res = call_deepseek_api(prompt)
-        
-        if analysis_res.startswith("❌"):
-            st.error(analysis_res)
-        else:
-            st.markdown(analysis_res)
-            st.markdown(f"""
-            <div style="text-align:right; margin-top:30px; padding-top:20px; border-top:1px dashed #eee; color:#ccc; font-size:0.8rem;">
-                生成 ID: {datetime.now().strftime('%Y%m%d%H%M%S')} | 数据来源: Tushare Pro | 模型: DeepSeek-V3
-            </div>
-            """, unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+            
+            status.update(label="✅ 数据获取与AI分析完成", state="complete")
+            time.sleep(0.5)
 
-        # === 核心逻辑：保存全量历史记录 ===
+        # 3. 记录历史 (此时所有数据都准备好了)
         new_record = {
             "分析时间": datetime.now().strftime('%Y-%m-%d %H:%M'),
-            "代码": stock_code,
-            "名称": stock_name,
-            "风格": analysis_style,
-            "周期": predict_cycle,
-            # --- 核心行情 ---
-            "最新价": daily_data.get('收盘价'),
-            "涨跌幅": daily_data.get('涨跌幅'),
-            "成交量": daily_data.get('成交量'),
-            "换手率": daily_data.get('换手率'),
-            "波动率": daily_data.get('波动率'),
-            # --- 基本面 ---
-            "PE(TTM)": fund_data.get('PE(TTM)'),
-            "PB": fund_data.get('PB'),
-            "总市值": fund_data.get('总市值'),
-            "行业": fund_data.get('所属行业'),
-            # --- 技术指标 ---
-            "MA5": daily_data.get('5日均线'),
-            "MA10": daily_data.get('10日均线'),
-            "MA20": daily_data.get('20日均线'),
-            "MACD": daily_data.get('MACD'),
-            "RSI": daily_data.get('RSI'),
-            "布林上轨": daily_data.get('布林上轨'),
-            "布林中轨": daily_data.get('布林中轨'),
-            "布林下轨": daily_data.get('布林下轨'),
-            # --- 市场环境 ---
-            "市场情绪": mkt_data.get('市场情绪'),
-            "指数涨跌": mkt_data.get('市场指数涨跌幅'),
-            # --- AI 报告全文 ---
+            "代码": stock_code, "名称": stock_name, "风格": analysis_style, "周期": predict_cycle,
+            "最新价": daily_data.get('收盘价'), "涨跌幅": daily_data.get('涨跌幅'),
+            "成交量": daily_data.get('成交量'), "换手率": daily_data.get('换手率'),
+            "PE(TTM)": fund_data.get('PE(TTM)'), "PB": fund_data.get('PB'),
+            "总市值": fund_data.get('总市值'), "行业": fund_data.get('所属行业'),
+            "市场情绪": mkt_data.get('市场情绪'), "指数涨跌": mkt_data.get('市场指数涨跌幅'),
             "AI分析报告": analysis_res
         }
         
-        # 记录去重逻辑
+        # 去重逻辑
         should_save = True
         if st.session_state.history_data:
             last = st.session_state.history_data[0]
@@ -436,7 +391,7 @@ def run_app():
             st.session_state.history_data.insert(0, new_record)
             if len(st.session_state.history_data) > 50: st.session_state.history_data.pop()
 
-        # 2. 核心指标区 (UI显示)
+        # 4. 开始渲染界面：核心指标区
         st.markdown("### 📈 核心概览")
         c1, c2, c3, c4 = st.columns(4, gap="large")
         
@@ -452,7 +407,7 @@ def run_app():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # 3. 详细指标面板 (UI显示)
+        # 5. 详细指标面板
         col_tech, col_market = st.columns([2, 1], gap="large")
         
         with col_tech:
@@ -521,20 +476,43 @@ def run_app():
             </div>
             """, unsafe_allow_html=True)
 
+        # 6. AI 报告展示
+        icon_map = {"稳健理智": "🧐", "短线博弈": "⚡", "激进犀利": "🔥"}
+        current_icon = icon_map.get(analysis_style, "🤖")
+        
+        st.markdown(f"""
+        <div class="ai-box">
+            <div style="display:flex; align-items:center; gap:15px; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid #eee;">
+                <span style="font-size: 2.2rem;">{current_icon}</span>
+                <div>
+                    <h3 style="margin:0; color:#1e3c72;">DeepSeek 深度研报</h3>
+                    <span style="font-size:0.9rem; color:#888;">AI 扮演角色：{analysis_style}分析师</span>
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        if analysis_res.startswith("❌"): st.error(analysis_res)
+        else: st.markdown(analysis_res)
+        
+        st.markdown(f"""
+            <div style="text-align:right; margin-top:30px; padding-top:20px; border-top:1px dashed #eee; color:#ccc; font-size:0.8rem;">
+                生成 ID: {datetime.now().strftime('%Y%m%d%H%M%S')} | 数据来源: Tushare Pro | 模型: DeepSeek-V3
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     # ===================== 5. 历史记录 (底部常驻) =====================
     if st.session_state.history_data:
         st.markdown("<br><hr><br>", unsafe_allow_html=True)
         st.markdown("### 📜 历史分析记录与对比")
         
         with st.expander("点击查看历史记录 (含下载)", expanded=True):
-            # UI上只显示摘要，防止表格太宽
             df_hist = pd.DataFrame(st.session_state.history_data)
-            
-            # 显示的列 (UI)
             display_cols = ["分析时间", "代码", "名称", "最新价", "涨跌幅", "PE(TTM)", "市场情绪", "风格"]
+            
             st.dataframe(
-                df_hist[display_cols], # 只显示摘要列
-                width="stretch", 
+                df_hist[display_cols],
+                width="stretch",
                 hide_index=True,
                 column_config={
                     "涨跌幅": st.column_config.TextColumn("涨跌幅", help="当日涨跌幅"),
@@ -543,7 +521,6 @@ def run_app():
             
             c_d1, c_d2 = st.columns([1, 5])
             with c_d1:
-                # 下载的是全量数据 (包含 AI 报告全文)
                 csv = df_hist.to_csv(index=False).encode('utf-8-sig')
                 st.download_button(
                     label="📥 下载完整数据 (CSV)", 
@@ -556,7 +533,6 @@ def run_app():
                     st.session_state.history_data = []
                     st.rerun()
 
-# ===================== 4. 程序入口 =====================
 if __name__ == "__main__":
     if check_password():
         run_app()
